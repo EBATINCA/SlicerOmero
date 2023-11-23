@@ -1,5 +1,6 @@
 import logging
 import os
+import qt
 from typing import Annotated, Optional
 
 import vtk
@@ -32,77 +33,23 @@ class OmeroConnection(ScriptedLoadableModule):
         # TODO: set categories (folders where the module shows up in the module selector)
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "Examples")]
         self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-        self.parent.contributors = ["John Doe (AnyWare Corp.)"]  # TODO: replace with "Firstname Lastname (Organization)"
+        self.parent.contributors = ["Csaba Pinter (EBATINCA. S.L)", "Idafen Santana (EBATINCA. S.L)"]
         # TODO: update with short description of the module and a link to online module documentation
         # _() function marks text as translatable to other languages
-        self.parent.helpText = _("""
-This is an example of scripted loadable module bundled in an extension.
-See more information in <a href="https://github.com/organization/projectname#OmeroConnection">module documentation</a>.
+        self.parent.helpText = _("""This module has been
 """)
-        # TODO: replace with organization, grant and thanks
         self.parent.acknowledgementText = _("""
-This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc., Andras Lasso, PerkLab,
-and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
+This file was originally developed by Csaba Pinter and Idafen Santana (EBATINCA. S.L). The work was funded by the
+CECAD Imaging Facility at the University of Cologne as part of the NFDI4Bioimage consortium.
 """)
 
-        # Additional initialization step after application startup is complete
-        slicer.app.connect("startupCompleted()", registerSampleData)
-
-
-#
-# Register sample data sets in Sample Data module
-#
-
-def registerSampleData():
-    """
-    Add data sets to Sample Data module.
-    """
-    # It is always recommended to provide sample data for users to make it easy to try the module,
-    # but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
-
-    import SampleData
-    iconsPath = os.path.join(os.path.dirname(__file__), 'Resources/Icons')
-
-    # To ensure that the source code repository remains small (can be downloaded and installed quickly)
-    # it is recommended to store data sets that are larger than a few MB in a Github release.
-
-    # OmeroConnection1
-    SampleData.SampleDataLogic.registerCustomSampleDataSource(
-        # Category and sample name displayed in Sample Data module
-        category='OmeroConnection',
-        sampleName='OmeroConnection1',
-        # Thumbnail should have size of approximately 260x280 pixels and stored in Resources/Icons folder.
-        # It can be created by Screen Capture module, "Capture all views" option enabled, "Number of images" set to "Single".
-        thumbnailFileName=os.path.join(iconsPath, 'OmeroConnection1.png'),
-        # Download URL and target file name
-        uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
-        fileNames='OmeroConnection1.nrrd',
-        # Checksum to ensure file integrity. Can be computed by this command:
-        #  import hashlib; print(hashlib.sha256(open(filename, "rb").read()).hexdigest())
-        checksums='SHA256:998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95',
-        # This node name will be used when the data set is loaded
-        nodeNames='OmeroConnection1'
-    )
-
-    # OmeroConnection2
-    SampleData.SampleDataLogic.registerCustomSampleDataSource(
-        # Category and sample name displayed in Sample Data module
-        category='OmeroConnection',
-        sampleName='OmeroConnection2',
-        thumbnailFileName=os.path.join(iconsPath, 'OmeroConnection2.png'),
-        # Download URL and target file name
-        uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
-        fileNames='OmeroConnection2.nrrd',
-        checksums='SHA256:1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97',
-        # This node name will be used when the data set is loaded
-        nodeNames='OmeroConnection2'
-    )
 
 
 #
 # OmeroConnectionParameterNode
 #
 
+#TODO: This class is not used in this module.
 @parameterNodeWrapper
 class OmeroConnectionParameterNode:
     """
@@ -167,8 +114,14 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
+        # Input fields
+        self.ui.hostLineEdit.textEdited.connect(self.updateFromGUI)
+        self.ui.portLineEdit.textEdited.connect(self.updateFromGUI)
+        self.ui.userNameLineEdit.textEdited.connect(self.updateFromGUI)
+        self.ui.passwordLineEdit.textEdited.connect(self.updateFromGUI)
+
         # Buttons
-        self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
+        self.ui.testConnectionButton.clicked.connect(self.onTestConnectionButton)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -179,6 +132,12 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
         self.removeObservers()
 
+        # Input fields
+        self.ui.hostLineEdit.textEdited.disconnect()
+        self.ui.portLineEdit.textEdited.disconnect()
+        self.ui.userNameLineEdit.textEdited.disconnect()
+        self.ui.passwordLineEdit.textEdited.disconnect()
+
     def enter(self) -> None:
         """
         Called each time the user opens this module.
@@ -186,15 +145,26 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Make sure parameter node exists and observed
         self.initializeParameterNode()
 
+        # Fill connection information from configuration
+        settings = qt.QSettings()
+
+        self.ui.hostLineEdit.text = settings.value('Omero/Host')
+        self.ui.portLineEdit.text = settings.value('Omero/Port')
+        self.ui.userNameLineEdit.text = settings.value('Omero/Username')
+        self.ui.passwordLineEdit.text = settings.value('Omero/Password')
+
+        self._checkCanApply()
+
     def exit(self) -> None:
         """
         Called each time the user opens a different module.
         """
-        # Do not react to parameter node changes (GUI will be updated when the user enters into the module)
-        if self._parameterNode:
-            self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
-            self._parameterNodeGuiTag = None
-            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+        pass
+        # # Do not react to parameter node changes (GUI will be updated when the user enters into the module)
+        # if self._parameterNode:
+        #     self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
+        #     self._parameterNodeGuiTag = None
+        #     self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
 
     def onSceneStartClose(self, caller, event) -> None:
         """
@@ -221,51 +191,70 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.setParameterNode(self.logic.getParameterNode())
 
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        if not self._parameterNode.inputVolume:
-            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-            if firstVolumeNode:
-                self._parameterNode.inputVolume = firstVolumeNode
+        # if not self._parameterNode.inputVolume:
+        #     firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+        #     if firstVolumeNode:
+        #         self._parameterNode.inputVolume = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode: Optional[OmeroConnectionParameterNode]) -> None:
         """
         Set and observe parameter node.
         Observation is needed because when the parameter node is changed then the GUI must be updated immediately.
         """
+        pass  #TODO: We do not use the parameter node in this module (only configuration)
+        # if self._parameterNode:
+        #     self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
+        #     self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+        # self._parameterNode = inputParameterNode
+        # if self._parameterNode:
+        #     # Note: in the .ui file, a Qt dynamic property called "SlicerParameterName" is set on each
+        #     # ui element that needs connection.
+        #     self._parameterNodeGuiTag = self._parameterNode.connectGui(self.ui)
+        #     self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
+        #     self._checkCanApply()
 
-        if self._parameterNode:
-            self._parameterNode.disconnectGui(self._parameterNodeGuiTag)
-            self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
-        self._parameterNode = inputParameterNode
-        if self._parameterNode:
-            # Note: in the .ui file, a Qt dynamic property called "SlicerParameterName" is set on each
-            # ui element that needs connection.
-            self._parameterNodeGuiTag = self._parameterNode.connectGui(self.ui)
-            self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
-            self._checkCanApply()
+    def updateFromGUI(self):
+        """
+        Update configuration based on the input fields.
+        """
+        settings = qt.QSettings()
+        settings.setValue('Omero/Host', self.ui.hostLineEdit.text)
+        settings.setValue('Omero/Port', self.ui.portLineEdit.text)
+        settings.setValue('Omero/Username', self.ui.userNameLineEdit.text)
+        settings.setValue('Omero/Password', self.ui.passwordLineEdit.text)
+
+        self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.inputVolume and self._parameterNode.thresholdedVolume:
-            self.ui.applyButton.toolTip = _("Compute output volume")
-            self.ui.applyButton.enabled = True
+        settings = qt.QSettings()
+        host = settings.value('Omero/Host')
+        port = settings.value('Omero/Port')
+        username = settings.value('Omero/Username')
+        password = settings.value('Omero/Password')
+        if host and port and username and password:
+            self.ui.testConnectionButton.toolTip = _("Check OMERO connection")
+            self.ui.testConnectionButton.enabled = True
         else:
-            self.ui.applyButton.toolTip = _("Select input and output volume nodes")
-            self.ui.applyButton.enabled = False
+            self.ui.testConnectionButton.toolTip = _("Need to fill connection information")
+            self.ui.testConnectionButton.enabled = False
 
-    def onApplyButton(self) -> None:
+    def onTestConnectionButton(self) -> None:
         """
         Run processing when user clicks "Apply" button.
         """
-        with slicer.util.tryWithErrorDisplay(_("Failed to compute results."), waitCursor=True):
+        with slicer.util.tryWithErrorDisplay(_("Failed to connect to OMERO server."), waitCursor=True):
+            settings = qt.QSettings()
+            host = settings.value('Omero/Host')
+            port = settings.value('Omero/Port')
+            username = settings.value('Omero/Username')
+            password = settings.value('Omero/Password')
 
-            # Compute output
-            self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
-                               self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
+            #TODO: Idafen
+            if True:  #TODO: Change this to actual condition
+                slicer.util.infoDisplay(f'Connection to OMERO server was successful.')
+            else:
+                slicer.util.errorDisplay(f'Connection to OMERO server failed!')
 
-            # Compute inverted output (if needed)
-            if self.ui.invertedOutputSelector.currentNode():
-                # If additional output volume is selected then result with inverted threshold is written there
-                self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
-                                   self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
 
 
 #
@@ -291,42 +280,48 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
     def getParameterNode(self):
         return OmeroConnectionParameterNode(super().getParameterNode())
 
-    def process(self,
-                inputVolume: vtkMRMLScalarVolumeNode,
-                outputVolume: vtkMRMLScalarVolumeNode,
-                imageThreshold: float,
-                invert: bool = False,
-                showResult: bool = True) -> None:
-        """
-        Run the processing algorithm.
-        Can be used without GUI widget.
-        :param inputVolume: volume to be thresholded
-        :param outputVolume: thresholding result
-        :param imageThreshold: values above/below this threshold will be set to 0
-        :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
-        :param showResult: show output volume in slice viewers
-        """
+    def scanFileSystemForImage(self):
+        pass  #TODO:
 
-        if not inputVolume or not outputVolume:
-            raise ValueError("Input or output volume is invalid")
+    def loadImageFromFile(self, filePath):
+        pass  #TODO:
 
-        import time
-        startTime = time.time()
-        logging.info('Processing started')
+    # def process(self,
+    #             inputVolume: vtkMRMLScalarVolumeNode,
+    #             outputVolume: vtkMRMLScalarVolumeNode,
+    #             imageThreshold: float,
+    #             invert: bool = False,
+    #             showResult: bool = True) -> None:
+    #     """
+    #     Run the processing algorithm.
+    #     Can be used without GUI widget.
+    #     :param inputVolume: volume to be thresholded
+    #     :param outputVolume: thresholding result
+    #     :param imageThreshold: values above/below this threshold will be set to 0
+    #     :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
+    #     :param showResult: show output volume in slice viewers
+    #     """
 
-        # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
-        cliParams = {
-            'InputVolume': inputVolume.GetID(),
-            'OutputVolume': outputVolume.GetID(),
-            'ThresholdValue': imageThreshold,
-            'ThresholdType': 'Above' if invert else 'Below'
-        }
-        cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
-        # We don't need the CLI module node anymore, remove it to not clutter the scene with it
-        slicer.mrmlScene.RemoveNode(cliNode)
+    #     if not inputVolume or not outputVolume:
+    #         raise ValueError("Input or output volume is invalid")
 
-        stopTime = time.time()
-        logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
+    #     import time
+    #     startTime = time.time()
+    #     logging.info('Processing started')
+
+    #     # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
+    #     cliParams = {
+    #         'InputVolume': inputVolume.GetID(),
+    #         'OutputVolume': outputVolume.GetID(),
+    #         'ThresholdValue': imageThreshold,
+    #         'ThresholdType': 'Above' if invert else 'Below'
+    #     }
+    #     cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
+    #     # We don't need the CLI module node anymore, remove it to not clutter the scene with it
+    #     slicer.mrmlScene.RemoveNode(cliNode)
+
+    #     stopTime = time.time()
+    #     logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
 
 
 #
@@ -366,33 +361,5 @@ class OmeroConnectionTest(ScriptedLoadableModuleTest):
         self.delayDisplay("Starting the test")
 
         # Get/create input data
-
-        import SampleData
-        registerSampleData()
-        inputVolume = SampleData.downloadSample('OmeroConnection1')
-        self.delayDisplay('Loaded test data set')
-
-        inputScalarRange = inputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(inputScalarRange[0], 0)
-        self.assertEqual(inputScalarRange[1], 695)
-
-        outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-        threshold = 100
-
-        # Test the module logic
-
-        logic = OmeroConnectionLogic()
-
-        # Test algorithm with non-inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, True)
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], threshold)
-
-        # Test algorithm with inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, False)
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], inputScalarRange[1])
 
         self.delayDisplay('Test passed')
