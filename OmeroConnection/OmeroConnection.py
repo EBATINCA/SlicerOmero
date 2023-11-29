@@ -3,6 +3,9 @@ import os
 import qt
 from typing import Annotated, Optional
 
+from omero.gateway import BlitzGateway
+
+
 import vtk
 
 import slicer
@@ -249,12 +252,14 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             username = settings.value('Omero/Username')
             password = settings.value('Omero/Password')
 
-            #TODO: Idafen
-            if True:  #TODO: Change this to actual condition
+            # Idafen: addded connection test
+            try:
+                conn = BlitzGateway(username, password, host, port)
+                conn.connect()
+                conn.close()
                 slicer.util.infoDisplay(f'Connection to OMERO server was successful.')
-            else:
-                slicer.util.errorDisplay(f'Connection to OMERO server failed!')
-
+            except Exception as e:
+                slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
 
 
 #
