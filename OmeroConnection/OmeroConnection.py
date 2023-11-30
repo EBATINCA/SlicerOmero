@@ -5,7 +5,6 @@ from typing import Annotated, Optional
 
 from omero.gateway import BlitzGateway
 
-
 import vtk
 
 import slicer
@@ -252,13 +251,14 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             username = settings.value('Omero/Username')
             password = settings.value('Omero/Password')
 
-            # Idafen: addded connection test
             try:
                 conn = BlitzGateway(username, password, host, port)
                 conn.connect()
                 conn.close()
                 slicer.util.infoDisplay(f'Connection to OMERO server was successful.')
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
 
 
@@ -291,43 +291,6 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
     def loadImageFromFile(self, filePath):
         pass  #TODO:
 
-    # def process(self,
-    #             inputVolume: vtkMRMLScalarVolumeNode,
-    #             outputVolume: vtkMRMLScalarVolumeNode,
-    #             imageThreshold: float,
-    #             invert: bool = False,
-    #             showResult: bool = True) -> None:
-    #     """
-    #     Run the processing algorithm.
-    #     Can be used without GUI widget.
-    #     :param inputVolume: volume to be thresholded
-    #     :param outputVolume: thresholding result
-    #     :param imageThreshold: values above/below this threshold will be set to 0
-    #     :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
-    #     :param showResult: show output volume in slice viewers
-    #     """
-
-    #     if not inputVolume or not outputVolume:
-    #         raise ValueError("Input or output volume is invalid")
-
-    #     import time
-    #     startTime = time.time()
-    #     logging.info('Processing started')
-
-    #     # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
-    #     cliParams = {
-    #         'InputVolume': inputVolume.GetID(),
-    #         'OutputVolume': outputVolume.GetID(),
-    #         'ThresholdValue': imageThreshold,
-    #         'ThresholdType': 'Above' if invert else 'Below'
-    #     }
-    #     cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
-    #     # We don't need the CLI module node anymore, remove it to not clutter the scene with it
-    #     slicer.mrmlScene.RemoveNode(cliNode)
-
-    #     stopTime = time.time()
-    #     logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
-
 
 #
 # OmeroConnectionTest
@@ -346,7 +309,7 @@ class OmeroConnectionTest(ScriptedLoadableModuleTest):
         slicer.mrmlScene.Clear()
 
     def runTest(self):
-        """Run as few or as many tests as needed here.
+        """ Run as few or as many tests as needed here.
         """
         self.setUp()
         self.test_OmeroConnection1()
