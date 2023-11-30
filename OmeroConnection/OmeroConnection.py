@@ -1,11 +1,13 @@
+import json
 import logging
 import os
 import qt
 from typing import Annotated, Optional
 
 from omero.gateway import BlitzGateway
-
-import vtk
+from PIL import Image
+import numpy as np
+from datetime import datetime
 
 import slicer
 from slicer.i18n import tr as _
@@ -127,6 +129,9 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
+
+        # Start checking file system for image ID descriptor JSON files
+        self.logic.monitorFileSystemForImage()
 
     def cleanup(self) -> None:
         """
@@ -282,14 +287,80 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
         """
         ScriptedLoadableModuleLogic.__init__(self)
 
+        self.fileWatcher = None
+
     def getParameterNode(self):
         return OmeroConnectionParameterNode(super().getParameterNode())
 
-    def scanFileSystemForImage(self):
-        pass  #TODO:
+    def monitorFileSystemForImage(self):
+        if self.fileWatcher is None:
+            self.fileWatcher = qt.QFileSystemWatcher()
+        self.fileWatcher.addPath('/home/kasm-user/Documents/ids')  #TODO: Hard-coded path, needs to be changed later
+        self.fileWatcher.directoryChanged.connect(self.onMonitoredDirectoryChanged)
 
-    def loadImageFromFile(self, filePath):
-        pass  #TODO:
+    def onMonitoredDirectoryChanged(self, directoryPath):
+        # Get all JSON files in monitored directory
+        filesInDir = os.listdir(directoryPath)
+        for file in filesInDir:
+            fileNameComponents = file.split('.')
+            if len(fileNameComponents) == 1:
+                continue  # Skip if file has no extension
+            if fileNameComponents[-1].lower() == 'json':
+                self.loadImageFromFile(os.path.join(directoryPath, file))
+
+    def loadImageFromFile(self, jsonFilePath):
+        with open(jsonFilePath) as file:
+            jsonDict = json.load(file)
+            imageID = jsonDict['id_image']
+            volumeNode = self.loadImageFromServerByID(imageID)
+            logging.info(f'Image loaded into volume {volumeNode.GetName()} ({volumeNode.GetID()})')
+
+        # Delete file. Stop observation for the duration of deletion
+        self.fileWatcher.directoryChanged.disconnect()
+        os.remove(jsonFilePath)
+        self.fileWatcher.directoryChanged.connect(self.onMonitoredDirectoryChanged)
+
+    def loadImageFromServerByID(self, imageID):
+        settings = qt.QSettings()
+        host = settings.value('Omero/Host')
+        port = settings.value('Omero/Port')
+        username = settings.value('Omero/Username')
+        password = settings.value('Omero/Password')
+
+        conn = BlitzGateway(username, password, host, port)
+        conn.connect()
+
+        image = conn.getObject("Image", imageID)
+
+        # save the image to a file in a temporary directory
+        filename = image.getName()
+        logging.info(f'Loading image with name {filename} ...')
+
+        # add current date and time to the filename keeping the extension
+        filename = filename[:-4] + "_" + datetime.now().strftime("%Y%m%d_%H%M%S") + filename[-4:]
+
+        filepath = os.path.join(slicer.app.temporaryPath, filename)
+        logging.info(f'Saving image to {filepath}')
+
+        # save the image to a file
+        pixels = image.getPrimaryPixels().getPlanes([(0,0,0)])
+
+        # Get the pixel data for all channels
+        size_c = image.getSizeC()
+        pixels = [np.array(plane) for plane in image.getPrimaryPixels().getPlanes([(0, c, 0) for c in range(size_c)])]
+
+        # Stack the 2D arrays into a 3D array
+        np_pixels = np.dstack(pixels)
+
+        # Create volume node from numpy array
+        vectorVolumeNode = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLVectorVolumeNode', image.getName())
+        slicer.util.updateVolumeFromArray(vectorVolumeNode, np_pixels)
+
+        # # Create an image object
+        # img = Image.fromarray(np_pixels)
+
+        # # Save the image to a file
+        # img.save(filepath)
 
 
 #
