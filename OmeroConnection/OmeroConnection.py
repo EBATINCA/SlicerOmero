@@ -4,7 +4,6 @@ import os
 import qt
 from typing import Annotated, Optional
 
-from omero.gateway import BlitzGateway
 from PIL import Image
 import numpy as np
 from datetime import datetime
@@ -47,6 +46,11 @@ This file was originally developed by Csaba Pinter and Idafen Santana (EBATINCA.
 CECAD Imaging Facility at the University of Cologne as part of the NFDI4Bioimage consortium.
 """)
 
+        try:
+            from omero.gateway import BlitzGateway
+        except ImportError:
+            logging.warning(f"{self.__class__.__name__} requires python package 'omero-py'. Installing ...")
+            slicer.util.pip_install("omero-py")
 
 
 #
@@ -87,9 +91,11 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
         ScriptedLoadableModuleWidget.__init__(self, parent)
         VTKObservationMixin.__init__(self)  # needed for parameter node observation
+
         self.logic = None
         self._parameterNode = None
         self._parameterNodeGuiTag = None
+
 
     def setup(self) -> None:
         """
@@ -257,6 +263,7 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             password = settings.value('Omero/Password')
 
             try:
+                from omero.gateway import BlitzGateway
                 conn = BlitzGateway(username, password, host, port)
                 conn.connect()
                 conn.close()
@@ -327,6 +334,7 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
         username = settings.value('Omero/Username')
         password = settings.value('Omero/Password')
 
+        from omero.gateway import BlitzGateway
         conn = BlitzGateway(username, password, host, port)
         conn.connect()
 
