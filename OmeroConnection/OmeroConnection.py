@@ -264,7 +264,7 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             try:
                 from omero.gateway import BlitzGateway
-                conn = BlitzGateway(username, password, host, port)
+                conn = BlitzGateway(username, password, host=host, port=port)
                 conn.connect()
                 # Check if the connection is successful
                 if conn.isConnected():
@@ -339,7 +339,7 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
         password = settings.value('Omero/Password')
 
         from omero.gateway import BlitzGateway
-        conn = BlitzGateway(username, password, host, port)
+        conn = BlitzGateway(username, password, host=host, port=port)
         conn.connect()
 
         image = conn.getObject("Image", imageID)
