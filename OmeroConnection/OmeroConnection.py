@@ -270,7 +270,7 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if conn.isConnected():
                     slicer.util.infoDisplay(f'Connection to OMERO server was successful.')
                 else:
-                    slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
+                    slicer.util.errorDisplay(f'Connection to OMERO server failed.')
                 conn.close()
             except Exception as e:
                 import traceback
