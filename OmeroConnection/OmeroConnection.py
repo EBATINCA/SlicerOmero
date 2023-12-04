@@ -1,12 +1,12 @@
+import json
 import logging
 import os
 import qt
 from typing import Annotated, Optional
 
-from omero.gateway import BlitzGateway
-
-
-import vtk
+from PIL import Image
+import numpy as np
+from datetime import datetime
 
 import slicer
 from slicer.i18n import tr as _
@@ -46,6 +46,11 @@ This file was originally developed by Csaba Pinter and Idafen Santana (EBATINCA.
 CECAD Imaging Facility at the University of Cologne as part of the NFDI4Bioimage consortium.
 """)
 
+        try:
+            from omero.gateway import BlitzGateway
+        except ImportError:
+            logging.warning(f"{self.__class__.__name__} requires python package 'omero-py'. Installing ...")
+            slicer.util.pip_install("omero-py")
 
 
 #
@@ -86,9 +91,11 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """
         ScriptedLoadableModuleWidget.__init__(self, parent)
         VTKObservationMixin.__init__(self)  # needed for parameter node observation
+
         self.logic = None
         self._parameterNode = None
         self._parameterNodeGuiTag = None
+
 
     def setup(self) -> None:
         """
@@ -128,6 +135,9 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
+
+        # Start checking file system for image ID descriptor JSON files
+        self.logic.monitorFileSystemForImage()
 
     def cleanup(self) -> None:
         """
@@ -252,8 +262,8 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             username = settings.value('Omero/Username')
             password = settings.value('Omero/Password')
 
-            # Idafen: addded connection test
             try:
+                from omero.gateway import BlitzGateway
                 conn = BlitzGateway(username, password, host, port)
                 conn.connect()
                 # Check if the connection is successful
@@ -263,6 +273,8 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
                 conn.close()
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
 
 
@@ -286,51 +298,81 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
         """
         ScriptedLoadableModuleLogic.__init__(self)
 
+        self.fileWatcher = None
+
     def getParameterNode(self):
         return OmeroConnectionParameterNode(super().getParameterNode())
 
-    def scanFileSystemForImage(self):
-        pass  #TODO:
+    def monitorFileSystemForImage(self):
+        if self.fileWatcher is None:
+            self.fileWatcher = qt.QFileSystemWatcher()
+        self.fileWatcher.addPath('/home/kasm-user/Documents/ids')  #TODO: Hard-coded path, needs to be changed later
+        self.fileWatcher.directoryChanged.connect(self.onMonitoredDirectoryChanged)
 
-    def loadImageFromFile(self, filePath):
-        pass  #TODO:
+    def onMonitoredDirectoryChanged(self, directoryPath):
+        # Get all JSON files in monitored directory
+        filesInDir = os.listdir(directoryPath)
+        for file in filesInDir:
+            fileNameComponents = file.split('.')
+            if len(fileNameComponents) == 1:
+                continue  # Skip if file has no extension
+            if fileNameComponents[-1].lower() == 'json':
+                self.loadImageFromFile(os.path.join(directoryPath, file))
 
-    # def process(self,
-    #             inputVolume: vtkMRMLScalarVolumeNode,
-    #             outputVolume: vtkMRMLScalarVolumeNode,
-    #             imageThreshold: float,
-    #             invert: bool = False,
-    #             showResult: bool = True) -> None:
-    #     """
-    #     Run the processing algorithm.
-    #     Can be used without GUI widget.
-    #     :param inputVolume: volume to be thresholded
-    #     :param outputVolume: thresholding result
-    #     :param imageThreshold: values above/below this threshold will be set to 0
-    #     :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
-    #     :param showResult: show output volume in slice viewers
-    #     """
+    def loadImageFromFile(self, jsonFilePath):
+        with open(jsonFilePath) as file:
+            jsonDict = json.load(file)
+            imageID = jsonDict['id_image']
+            volumeNode = self.loadImageFromServerByID(imageID)
+            logging.info(f'Image loaded into volume {volumeNode.GetName()} ({volumeNode.GetID()})')
 
-    #     if not inputVolume or not outputVolume:
-    #         raise ValueError("Input or output volume is invalid")
+        # Delete file. Stop observation for the duration of deletion
+        self.fileWatcher.directoryChanged.disconnect()
+        os.remove(jsonFilePath)
+        self.fileWatcher.directoryChanged.connect(self.onMonitoredDirectoryChanged)
 
-    #     import time
-    #     startTime = time.time()
-    #     logging.info('Processing started')
+    def loadImageFromServerByID(self, imageID):
+        settings = qt.QSettings()
+        host = settings.value('Omero/Host')
+        port = settings.value('Omero/Port')
+        username = settings.value('Omero/Username')
+        password = settings.value('Omero/Password')
 
-    #     # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
-    #     cliParams = {
-    #         'InputVolume': inputVolume.GetID(),
-    #         'OutputVolume': outputVolume.GetID(),
-    #         'ThresholdValue': imageThreshold,
-    #         'ThresholdType': 'Above' if invert else 'Below'
-    #     }
-    #     cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
-    #     # We don't need the CLI module node anymore, remove it to not clutter the scene with it
-    #     slicer.mrmlScene.RemoveNode(cliNode)
+        from omero.gateway import BlitzGateway
+        conn = BlitzGateway(username, password, host, port)
+        conn.connect()
 
-    #     stopTime = time.time()
-    #     logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
+        image = conn.getObject("Image", imageID)
+
+        # save the image to a file in a temporary directory
+        filename = image.getName()
+        logging.info(f'Loading image with name {filename} ...')
+
+        # add current date and time to the filename keeping the extension
+        filename = filename[:-4] + "_" + datetime.now().strftime("%Y%m%d_%H%M%S") + filename[-4:]
+
+        filepath = os.path.join(slicer.app.temporaryPath, filename)
+        logging.info(f'Saving image to {filepath}')
+
+        # save the image to a file
+        pixels = image.getPrimaryPixels().getPlanes([(0,0,0)])
+
+        # Get the pixel data for all channels
+        size_c = image.getSizeC()
+        pixels = [np.array(plane) for plane in image.getPrimaryPixels().getPlanes([(0, c, 0) for c in range(size_c)])]
+
+        # Stack the 2D arrays into a 3D array
+        np_pixels = np.dstack(pixels)
+
+        # Create volume node from numpy array
+        vectorVolumeNode = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLVectorVolumeNode', image.getName())
+        slicer.util.updateVolumeFromArray(vectorVolumeNode, np_pixels)
+
+        # # Create an image object
+        # img = Image.fromarray(np_pixels)
+
+        # # Save the image to a file
+        # img.save(filepath)
 
 
 #
@@ -350,7 +392,7 @@ class OmeroConnectionTest(ScriptedLoadableModuleTest):
         slicer.mrmlScene.Clear()
 
     def runTest(self):
-        """Run as few or as many tests as needed here.
+        """ Run as few or as many tests as needed here.
         """
         self.setUp()
         self.test_OmeroConnection1()
