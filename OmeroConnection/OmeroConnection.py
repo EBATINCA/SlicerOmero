@@ -256,8 +256,12 @@ class OmeroConnectionWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             try:
                 conn = BlitzGateway(username, password, host, port)
                 conn.connect()
+                # Check if the connection is successful
+                if conn.isConnected():
+                    slicer.util.infoDisplay(f'Connection to OMERO server was successful.')
+                else:
+                    slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
                 conn.close()
-                slicer.util.infoDisplay(f'Connection to OMERO server was successful.')
             except Exception as e:
                 slicer.util.errorDisplay(f'Connection to OMERO server failed: {str(e)}')
 
