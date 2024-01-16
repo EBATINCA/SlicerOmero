@@ -326,6 +326,12 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
             volumeNode = self.loadImageFromServerByID(imageID)
             logging.info(f'Image loaded into volume {volumeNode.GetName()} ({volumeNode.GetID()})')
 
+            # Show image
+            appLogic = slicer.app.applicationLogic()
+            selectionNode = appLogic.GetSelectionNode()
+            selectionNode.SetActiveVolumeID(volumeNode.GetID())
+            appLogic.PropagateVolumeSelection()     
+
         # Delete file. Stop observation for the duration of deletion
         self.fileWatcher.directoryChanged.disconnect()
         os.remove(jsonFilePath)
@@ -373,6 +379,8 @@ class OmeroConnectionLogic(ScriptedLoadableModuleLogic):
 
         # # Save the image to a file
         # img.save(filepath)
+
+        return vectorVolumeNode
 
 
 #
